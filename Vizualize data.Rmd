@@ -1,0 +1,122 @@
+---
+title: "Special Teams Viz"
+author: "Nathan Hawkins"
+date: "10/15/2021"
+output: html_document
+---
+
+# Read in and merge data
+
+```{r}
+rm(list = ls())
+library(vroom)
+library(tidyverse)
+track18 <- "nfl-big-data-bowl-2022/tracking2018.csv"
+tracking.example <- read_csv(track18)
+
+file.game <- "nfl-big-data-bowl-2022/games.csv"
+games.sum <- read.csv(file.game) 
+
+file.plays <- "nfl-big-data-bowl-2022/plays.csv"
+plays.sum <- read.csv(file.plays)
+games_vec <- unique(games.sum$gameId)
+
+pff <- "nfl-big-data-bowl-2022/PFFScoutingData.csv"
+pff <- read.csv(pff)
+
+players <- "nfl-big-data-bowl-2022/players.csv"
+players <- read.csv(players)
+
+
+
+tracking.example <- tracking.example[1:100000,]
+
+tracking.example.merged <- tracking.example %>% inner_join(games.sum) %>% inner_join(plays.sum) %>% inner_join(pff) %>% inner_join(players)
+#tracking.example.merged$event
+table(tracking.example.merged[1:100000,"event"])
+```
+
+# Choose which event you want, "punt_received" selected
+
+
+```{r}
+ymin <- NA
+ymax <- NA
+#table(tracking.example.merged$event)
+tracking.example.merged1 <- tracking.example.merged[1:1000000,] %>% filter(event == "punt_received")
+tracking.example.merged1
+#tracking.example.merged2 <- tracking.example.merged1[1:400,]
+
+length(unique(tracking.example.merged1$playId))
+
+plays <- unique(tracking.example.merged1$playId)
+```
+
+# This will show you all the plays of the event you choose above
+# This only shows the exact instance of the event, no before or after locations 
+
+```{r}
+
+for(i in 1:length(unique(tracking.example.merged1$playId))){
+  
+  example.play <- tracking.example.merged1 %>% filter(playId == plays[i])
+  ## General field boundaries
+  xmin <- 0
+  xmax <- 160/3
+  hash.right <- 38.35
+  hash.left <- 12
+  hash.width <- 3.3
+
+
+  ## Specific boundaries for a given play
+  ymin[i] <- max(round(min(example.play$x, na.rm = TRUE) - 10, -1), 0)
+  ymax[i] <- min(round(max(example.play$x, na.rm = TRUE) + 10, -1), 120)
+  df.hash <- expand.grid(x = c(0, 23.36667, 29.96667, xmax), y = (10:110))
+  df.hash <- df.hash %>% filter(!(floor(y %% 5) == 0))
+  df.hash <- df.hash %>% filter(y < ymax[i], y > ymin[i])
+  
+  # Now plot
+  print(ggplot() + 
+  ylim(ymin[i], ymax[i]) + coord_fixed() +
+          labs(title = paste("Play Number:", example.play$playId[1], example.play$homeTeamAbbr[1], "-",
+                             example.play$preSnapHomeScore[1], 
+                             example.play$visitorTeamAbbr[1], "-", 
+                             example.play$preSnapVisitorScore[1] ), 
+               subtitle = paste(example.play$specialTeamsResult[1])) +
+    scale_size_manual(values = c(6, 4, 6), guide = FALSE) + 
+    scale_shape_manual(values = c(21, 16, 21), guide = FALSE) +
+    #scale_fill_manual(values = c("#e31837", "#654321", "#002244"), guide = FALSE) + 
+    #scale_colour_manual(values = c("black", "#654321", "#c60c30"), guide = FALSE) + 
+    annotate("text", x = df.hash$x[df.hash$x < 55/2], 
+             y = df.hash$y[df.hash$x < 55/2], label = "_", hjust = 0, vjust = -0.2) + 
+    annotate("text", x = df.hash$x[df.hash$x > 55/2], 
+             y = df.hash$y[df.hash$x > 55/2], label = "_", hjust = 1, vjust = -0.2) + 
+    annotate("segment", x = xmin, 
+             y = seq(max(10, ymin[i]), min(ymax[i], 110), by = 5), 
+             xend =  xmax, 
+             yend = seq(max(10, ymin[i]), min(ymax[i], 110), by = 5)) + 
+    annotate("text", x = rep(hash.left, 11), y = seq(10, 110, by = 10), 
+                      label = c("G   ", seq(10, 50, by = 10), rev(seq(10, 40, by = 10)), "   G"), 
+                      angle = 270, size = 4) + 
+    annotate("text", x = rep((xmax - hash.left), 11), y = seq(10, 110, by = 10), 
+             label = c("   G", seq(10, 50, by = 10), rev(seq(10, 40, by = 10)), "G   "), 
+             angle = 90, size = 4) + 
+    annotate("segment", x = c(xmin, xmin, xmax, xmax), 
+             y = c(ymin[i], ymax[i], ymax[i], ymin[i]), 
+             xend = c(xmin, xmax, xmax, xmin), 
+             yend = c(ymax[i], ymax[i], ymin[i], ymin[i]), colour = "black") + 
+    geom_point(data = example.play, aes(x = (xmax-y), y = x, shape = team,
+                                   fill = team, group = nflId, colour = team), alpha = 0.7, size = 3.5)) + 
+    geom_text(data = example.play, aes(x = (xmax-y), y = x, label = jerseyNumber), colour = "black", 
+            vjust = 0.36, size = 3.5) + 
+    theme(legend.position = "left")
+    
+}
+
+
+```
+
+
+
+
+
