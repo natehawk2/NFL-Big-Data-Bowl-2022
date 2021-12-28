@@ -36,7 +36,7 @@ action_tbl <- action_tbl[!(action_tbl$gameId == 2019120110 & action_tbl$playId =
 table(table(action_tbl$game_play))
 
 # Read in punts_plays_fastr data
-punts_plays_fastr <- read_csv("punts_plays_fastr.csv")
+punts_plays_fastr <- read_csv("https://raw.githubusercontent.com/natehawk2/NFL-Big-Data-Bowl-2022/main/punts_plays_fastr.csv")
 
 # Look at one specific play
 action_puntteam_tbl %>% 
