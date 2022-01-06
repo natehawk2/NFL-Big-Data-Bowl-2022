@@ -117,7 +117,7 @@ tst2 <- tst1 %>% filter(kickLength.x > 40)
 #tst1 %>% filter(kickLength.x < 20) %>% dplyr::select(playDescription.x, yardLine, kickLength.x, yardlineNumber.x) %>% view 
 
 
-# Get the mean of the two closest defenders.
+# Get the mean of the  closest defender.
 def_distances_tbl <- tst2 %>% group_by(gameId, playId, Punt_Return_Team)  %>% 
   filter(Punt_Return_Team == "Punt Team") %>% 
   arrange(returner_distance, .by_group = TRUE)  %>% 
@@ -165,12 +165,7 @@ binned_data <- def_distances_tbl %>% mutate(def_distance_bin =
                                                       mean_defender_distance < 30 ~ 3,
                                                       mean_defender_distance < 64 ~ 4
                                                     )) 
-table(paste0(binned_data$def_distance_bin, "-", binned_data$yardlinebin))
-hist(binned_data$def_distance_bin)
-hist(binned_data$mean_defender_distance)
-hist(binned_data$yardlinebin)
 
-table(binned_data$def_distance_bin)
 binned_data %>% dplyr::select(def_distance_bin, mean_defender_distance)
 
 ### reclassify muffs as either fair catches or punt recieves
@@ -179,15 +174,15 @@ binned_data %>% dplyr::select(def_distance_bin, mean_defender_distance)
 binned_data$event.y = ifelse(binned_data$event.y == "punt_muffed", "fair_catch", binned_data$event.y)
 
 
+
 # Get mean epa for each group
 epa_tbl <- binned_data %>% group_by(yardlinebin, def_distance_bin, event.y) %>% 
-  mutate(median_epa = quantile(-epa, 0.5)) %>% 
+  mutate(median_epa = mean(-epa)) %>% 
   arrange(median_epa, .by_group = TRUE)
 
 epa_tbl %>% arrange(median_epa, .by_group = TRUE) %>% 
   dplyr::select(mean_defender_distance, yardLine, playDescription.x, epa, event.y, median_epa) %>%
-  group_by(yardlinebin, def_distance_bin) %>% 
-   View()
+  group_by(yardlinebin, def_distance_bin)
 
 # Plot epa by group
 ggplot(data = epa_tbl %>% filter(event.y != "punt_muffed"), mapping = aes(x = yardlinebin, y = def_distance_bin, fill = median_epa)) + 
@@ -197,7 +192,7 @@ ggplot(data = epa_tbl %>% filter(event.y != "punt_muffed"), mapping = aes(x = ya
 # Find which one is best in each case
 epa_tbl_only = epa_tbl %>% dplyr::select(median_epa, yardlinebin, def_distance_bin, event.y)
 epa_tbl_only <- unique(epa_tbl_only)
-epa_tbl_only %>% group_by(yardlinebin, def_distance_bin) %>% View
+epa_tbl_only %>% group_by(yardlinebin, def_distance_bin)
 
 result_table_epa <- epa_tbl_only %>% filter(event.y != "punt_muffed") %>%  group_by(yardlinebin, def_distance_bin) %>% top_n(1, median_epa)
 
@@ -214,12 +209,44 @@ ggplot(data = result_table_epa %>% filter(!is.na(difference)), mapping = aes(x =
                                                                                    fill = event.y, 
                                               alpha = difference)) + 
   geom_raster() + labs(title = "What should returners be doing based on EPA",
-                       subtitle = "20th percentile of Returns",
+                       subtitle = "Difference between first and second best choice",
                        x = "Yardline binned every 2 yards",
-                       y = "Closest Defender Distance binned every 3 yards")
+                       y = "Closest Defender Distance binned at quantiles")
 
+ggplot(
+  data = result_table_epa,
+  mapping = aes(
+    x = yardlinebin,
+    y = def_distance_bin,
+    fill = event.y,
+    alpha = difference
+  )
+) +
 
-
+geom_tile(color = "white") +
+  labs(
+    title = "Best decision (all punts)",
+    subtitle = "Gradient represents how much better that choice is than the next best choice",
+    x = "Yardline \n (binned every 2 yards)",
+    y = "Closest Defender Distance\n(2 seconds until ball lands)",
+    fill = NULL,
+    caption = "Plot: Nate Hawkins & Jacob Miller \n Data: NFL Big Data Bowl & nflfastr"
+  ) +
+  theme_minimal() +
+  scale_x_continuous(breaks = c(0.5, 3, 5.5, 8, 10.5),
+                     labels = c(0, 5, 10, 15, 20)) +
+  scale_y_continuous(breaks = c(0, 1, 2, 3, 4),
+                     labels = c("< 15", "15 - 20", "20 - 25", "25 - 30", "> 30")) +
+  theme(panel.grid = element_blank(),
+        legend.position = "top",
+        legend.text = element_text(size = 12),
+        axis.text = element_text(size = 14,
+                                 face = "bold"),
+        axis.title = element_text(size = 16,
+                                  face = "bold"),
+        plot.subtitle = element_text(size = 14),
+        plot.title = element_markdown(size = 20,
+                                      face = "bold"))
 
 # Make plot to show what returners ARE doing
 
@@ -231,12 +258,26 @@ epa_tbl_only = epa_tbl %>% count(yardlinebin, def_distance_bin, event.y) %>% uni
 
 result_table_epa <- epa_tbl_only  %>%  group_by(yardlinebin, def_distance_bin) %>% top_n(1, n)
 
+second = epa_tbl_only  %>%  group_by(yardlinebin, def_distance_bin) %>% top_n(2, n) %>% arrange(-n, .by_group = TRUE) %>% 
+  slice(2) %>% 
+  dplyr::select(yardlinebin, def_distance_bin, n)
+names(second)[3] = "n_2"
+result_table_epa = result_table_epa %>% left_join(second)
+result_table_epa = result_table_epa %>% mutate(difference = n - n_2)
+result_table_epa
+
 ggplot(data = result_table_epa, mapping = aes(x = yardlinebin, y = def_distance_bin,
-                                              fill = event.y)) + 
+                                              fill = event.y, 
+                                              alpha = difference)) + 
   geom_raster() + labs(title = "What are returners doing?",
                        subtitle = "Most frequent choices",
                        x = "Yardline binned every 2 yards",
                        y = "Closest Defender Distance binned every 3 yards")
+
+
+
+
+
 
 
 ##############################
@@ -341,4 +382,68 @@ ggplot(data = result_table %>% filter(event.y != "punt_muffed"), mapping = aes(x
 
 
 
+########################
+# Individual Returners #
+########################
+
+# make yardline bins
+def_distances_tbl <- def_distances_tbl %>% mutate(yardlinebin = 
+                                                    case_when(
+                                                      yardLine < 5 ~ 1,
+                                                      yardLine < 10 ~ 2,
+                                                      yardLine < 15 ~ 3,
+                                                      yardLine < 21 ~ 4
+                                                    
+                                                    )) 
+
+
+# Make defender distances bins
+binned_data <- def_distances_tbl %>% mutate(def_distance_bin = 
+                                              case_when(
+                                                mean_defender_distance < 15 ~ 0,
+                                                mean_defender_distance < 20 ~ 1,
+                                                mean_defender_distance < 25 ~ 2,
+                                                mean_defender_distance < 30 ~ 3,
+                                                mean_defender_distance < 64 ~ 4
+                                              )) 
+
+table(binned_data$returnerId.x.x)
+mean(is.na(binned_data$returnerId.x.x))
+
+binned_data3 <- binned_data
+returner = binned_data3 %>% filter(returnerId.x.x == "43556")
+
+for(i in 1:length(unique(binned_data3$returnerId.x.x))){
+  returner = binned_data3 %>% filter(returnerId.x.x == unique(binned_data3$returnerId.x.x)[i])
+  
+  epa_tbl <- returner %>% group_by(yardlinebin, def_distance_bin, event.y) %>% 
+    mutate(median_epa = mean(-epa)) %>% 
+    arrange(median_epa, .by_group = TRUE)
+  
+  epa_tbl_only = epa_tbl %>% count(yardlinebin, def_distance_bin, event.y) %>% unique()
+  
+  result_table_epa <- epa_tbl_only  %>%  group_by(yardlinebin, def_distance_bin) %>% top_n(1, n)
+  
+  ggplot(data = result_table_epa, mapping = aes(x = yardlinebin, y = def_distance_bin,
+                                                fill = event.y)) + 
+    geom_raster() + labs(title = "What is a given reciever doing?",
+                         #subtitle = "Most frequent choices",
+                         x = "Yardline binned every 2 yards",
+                         y = "Closest Defender Distance binned every 3 yards")
+}
+
+epa_tbl <- returner %>% group_by(yardlinebin, def_distance_bin, event.y) %>% 
+  mutate(median_epa = mean(-epa)) %>% 
+  arrange(median_epa, .by_group = TRUE)
+
+epa_tbl_only = epa_tbl %>% count(yardlinebin, def_distance_bin, event.y) %>% unique()
+
+result_table_epa <- epa_tbl_only  %>%  group_by(yardlinebin, def_distance_bin) %>% top_n(1, n)
+
+ggplot(data = result_table_epa, mapping = aes(x = yardlinebin, y = def_distance_bin,
+                                              fill = event.y)) + 
+  geom_raster() + labs(title = "What is a given reciever doing?",
+                       #subtitle = "Most frequent choices",
+                       x = "Yardline binned every 2 yards",
+                       y = "Closest Defender Distance binned every 3 yards")
 
